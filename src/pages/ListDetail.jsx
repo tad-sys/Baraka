@@ -1,1 +1,220 @@
-import { useEffect, useState } from 'react';import { base44 } from '@/api/base44Client';import { createPageUrl } from '@/utils';import { Link } from 'react-router-dom';import ActionCard from '../components/ActionCard';import { Button } from '@/components/ui/button';import { Calendar, Share2, ArrowLeft, Target, TrendingUp, Package } from 'lucide-react';import { format } from 'date-fns';import { motion } from 'framer-motion';const typeEmoji = { mariage: '💍', association: '🤲', naissance: '👶', aqiqa: '🐑', autre: '✨' };export default function ListDetail() {  const urlParams = new URLSearchParams(window.location.search);  const listId = urlParams.get('id');  const [list, setList] = useState(null);  const [actions, setActions] = useState([]);  const [loading, setLoading] = useState(true);  const [user, setUser] = useState(null);  useEffect(() => {    Promise.all([      base44.entities.DonationList.filter({ id: listId }),      base44.entities.DonationAction.filter({ list_id: listId }),      base44.auth.me().catch(() => null),    ]).then(([lists, acts, u]) => {      setList(lists[0] || null);      setActions(acts);      setUser(u);    }).finally(() => setLoading(false));  }, [listId]);  const handleShare = () => navigator.clipboard.writeText(window.location.href);  const totalGoal = actions.reduce((s, a) => s + (a.goal_quantity * a.unit_price || 0), 0);  const totalRaised = actions.reduce((s, a) => s + ((a.current_quantity || 0) * a.unit_price || 0), 0);  const overallProgress = totalGoal > 0 ? Math.min(100, Math.round((totalRaised / totalGoal) * 100)) : 0;  if (loading) return (    <div className="max-w-5xl mx-auto px-4 py-16 space-y-4">      {Array(3).fill(0).map((_, i) => <div key={i} className="h-24 bg-muted rounded-2xl animate-pulse" />)}    </div>  );  if (!list) return (    <div className="text-center py-24">      <p className="text-muted-foreground">Liste introuvable.</p>    </div>  );  const isOwner = user && user.email === list.created_by;  const emoji = typeEmoji[list.type] || '✨';  return (    <div>      {/* Cover */}      {list.cover_image ? (        <div className="relative h-48 md:h-72 w-full overflow-hidden">          <img src={list.cover_image} alt={list.title} className="w-full h-full object-cover" />          <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent" />        </div>      ) : (        <div className="h-40 md:h-60 bg-gradient-to-br from-primary/10 via-accent/40 to-secondary flex items-center justify-center">          <span className="text-7xl">{emoji}</span>        </div>      )}      <div className="max-w-5xl mx-auto px-4 sm:px-6 -mt-8 relative">        {/* List header card */}        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-border rounded-2xl p-6 md:p-8 mb-8 shadow-sm">          <div className="flex items-start justify-between gap-4 flex-wrap">            <div className="flex-1">              <div className="flex items-center gap-2 mb-2 flex-wrap">                <span className="text-2xl">{emoji}</span>                <h1 className="font-display text-2xl md:text-3xl font-semibold text-foreground">{list.title}</h1>              </div>              {list.description && <p className="text-muted-foreground mb-3 leading-relaxed">{list.description}</p>}              {list.target_date && (                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">                  <Calendar className="w-4 h-4" />                  {format(new Date(list.target_date), 'd MMMM yyyy')}                </div>              )}            </div>            <div className="flex gap-2 shrink-0">              <Button variant="outline" size="sm" className="rounded-xl" onClick={handleShare}>                <Share2 className="w-4 h-4 mr-1.5" /> Partager              </Button>              {isOwner && (                <Button asChild size="sm" className="rounded-xl bg-primary hover:bg-primary/90">                  <Link to={createPageUrl(`ManageList?id=${listId}`)}>Gérer</Link>                </Button>              )}            </div>          </div>          {/* Global stats */}          {actions.length > 0 && (            <div className="mt-6 pt-5 border-t border-border grid grid-cols-3 gap-4">              <div className="text-center">                <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1"><Package className="w-4 h-4" /></div>                <div className="font-bold text-foreground text-xl">{actions.length}</div>                <div className="text-xs text-muted-foreground">Actions</div>              </div>              <div className="text-center">                <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1"><TrendingUp className="w-4 h-4" /></div>                <div className="font-bold text-foreground text-xl">{overallProgress}%</div>                <div className="text-xs text-muted-foreground">Complété</div>              </div>              <div className="text-center">                <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1"><Target className="w-4 h-4" /></div>                <div className="font-bold text-foreground text-xl">{Math.round(totalGoal)}€</div>                <div className="text-xs text-muted-foreground">Objectif total</div>              </div>            </div>          )}          {/* Global progress bar */}          {actions.length > 0 && (            <div className="mt-4">              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">                <div className="bg-primary h-2 rounded-full transition-all duration-1000" style={{ width: `${overallProgress}%` }} />              </div>              <p className="text-xs text-muted-foreground mt-1.5 text-right">{Math.round(totalRaised)}€ collectés sur {Math.round(totalGoal)}€</p>            </div>          )}        </motion.div>        {/* Actions grid */}        {actions.length > 0 ? (          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-12">            {actions.map((action, i) => (              <motion.div key={action.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>                <ActionCard action={action} showProgress />              </motion.div>            ))}          </div>        ) : (          <div className="text-center py-20 border border-dashed border-border rounded-2xl mb-12">            <p className="text-muted-foreground">Aucune action de don pour l'instant.</p>          </div>        )}        <div className="flex justify-center mb-12">          <Button asChild variant="ghost" size="sm" className="rounded-xl text-muted-foreground">            <Link to={createPageUrl('Home')}><ArrowLeft className="w-4 h-4 mr-1.5" /> Retour à l'accueil</Link>          </Button>        </div>      </div>    </div>  );}
+import { useEffect, useState } from 'react';
+import { useSearchParams, Link } from 'react-router-dom';
+import { supabase } from '@/api/supabaseClient';
+import { useAuth } from '@/lib/AuthContext'; 
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ArrowLeft, Heart, Gift, Share2, Settings2, Check, Target, PartyPopper, Lock } from 'lucide-react';
+import { createPageUrl, formatPrice } from '@/lib/utils'; 
+import ActionListItem from '@/components/list/ActionListItem';
+import { Progress } from "@/components/ui/progress";
+import { motion, AnimatePresence } from 'framer-motion';
+
+export default function ListDetail() {
+  const [searchParams] = useSearchParams();
+  const listId = searchParams.get('id');
+  const { user } = useAuth(); 
+  
+  const [list, setList] = useState(null);
+  const [actions, setActions] = useState([]);
+  const [totalRaised, setTotalRaised] = useState(0); 
+  const [calculatedGoal, setCalculatedGoal] = useState(0); 
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [errorStatus, setErrorStatus] = useState(null);
+
+  const isOwner = user && list && (user.email === list.created_by);
+
+  useEffect(() => {
+    if (listId) {
+      fetchPublicListData();
+    }
+  }, [listId]);
+
+  const fetchPublicListData = async () => {
+    if (!list) setLoading(true); 
+    
+    try {
+      // 1. Récupération des infos de la liste avec filtre de modération
+      const { data: listData, error: listError } = await supabase
+        .from('DonationList')
+        .select('*')
+        .eq('id', listId)
+        .eq('moderation_status', 'active') // Filtre de modération
+        .single();
+
+      if (listError || (listData && listData.flag_count >= 5)) {
+        setErrorStatus("not_found");
+        throw new Error("Liste introuvable ou signalée.");
+      }
+      setList(listData);
+
+      // 2. Récupération des actions/objets avec filtre de modération
+      const { data: actionsData, error: actionsError } = await supabase
+        .from('DonationAction')
+        .select('*')
+        .eq('list_id', listId)
+        .eq('moderation_status', 'active') // Filtre de modération
+        .lt('flag_count', 5)               // Filtre de modération (seuil de signalement)
+        .order('is_featured', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (actionsError) throw actionsError;
+      const currentActions = actionsData || [];
+      setActions(currentActions);
+
+      // --- CALCULS SYNCHRONISÉS ---
+      const totalRelaisedCalc = currentActions.reduce((sum, item) => {
+        return sum + (Number(item.current_quantity) || 0) * (Number(item.unit_price) || 0);
+      }, 0);
+
+      const totalGoalCalc = currentActions.reduce((sum, item) => {
+        return sum + (Number(item.goal_quantity) || 0) * (Number(item.unit_price) || 0);
+      }, 0);
+      
+      setTotalRaised(totalRelaisedCalc);
+      setCalculatedGoal(totalGoalCalc);
+
+    } catch (error) {
+      console.error("Erreur de mise à jour:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const shareUrl = createPageUrl('ListDetail', { id: listId });
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: list?.title || 'Baraka',
+          text: `Découvrez cette liste de dons : ${list?.title}`,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.log("Erreur partage:", err);
+      }
+    } else {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const progressPercentage = calculatedGoal > 0 ? Math.min((totalRaised / calculatedGoal) * 100, 100) : 0;
+  const isGoalReached = progressPercentage >= 100;
+  const totalItemsDonated = actions.reduce((sum, a) => sum + (Number(a.current_quantity) || 0), 0);
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 space-y-6">
+        <Skeleton className="h-12 w-1/3 mx-auto" />
+        <Skeleton className="h-64 w-full rounded-3xl" />
+      </div>
+    );
+  }
+
+  if (errorStatus === "not_found" || !list) {
+    return (
+      <div className="text-center py-20">
+        <h2 className="text-2xl font-bold mb-4">Liste introuvable</h2>
+        <p className="text-muted-foreground mb-8">Cette liste n'existe pas ou n'est plus disponible.</p>
+        <Button asChild>
+          <Link to="/Explore text-white">Retourner à l'exploration</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-12 pb-24">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+        <Link to="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Retour
+        </Link>
+        {isOwner && (
+          <Button asChild variant="outline" size="sm" className="rounded-xl border-primary/30">
+            <Link to={`/ManageList?id=${list.id}`}>
+              <Settings2 className="w-4 h-4 mr-2" /> Paramètres
+            </Link>
+          </Button>
+        )}
+      </div>
+
+      <header className="text-center mb-10">
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${isGoalReached ? 'bg-green-100 text-green-600' : 'bg-primary/10 text-primary'}`}
+        >
+          {isGoalReached ? <PartyPopper size={40} /> : <Heart size={40} fill="currentColor" />}
+        </motion.div>
+        <h1 className="text-4xl font-bold mb-4">{list.title}</h1>
+        <p className="text-muted-foreground italic">"{list.description}"</p>
+        
+        {list.require_auth && (
+          <div className="flex justify-center mt-4">
+            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 py-1 px-3">
+              <Lock className="w-3 h-3 mr-2" /> Connexion requise pour participer
+            </Badge>
+          </div>
+        )}
+      </header>
+
+      {/* CARD DE PROGRESSION GLOBALE */}
+      {calculatedGoal > 0 && (
+        <Card className={`mb-12 p-8 rounded-[2.5rem] shadow-xl border-primary/10 relative overflow-hidden transition-all duration-500 ${isGoalReached ? 'bg-green-50/50 border-green-200' : 'bg-white'}`}>
+          <div className="flex items-end justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2 font-bold mb-1 text-xs uppercase tracking-widest text-primary">
+                <Target className="w-4 h-4" /> Progression globale
+              </div>
+              <p className="text-3xl font-black">
+                {formatPrice(totalRaised)} <span className="text-sm font-medium text-muted-foreground">/ {formatPrice(calculatedGoal)}</span>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className={`text-4xl font-black ${isGoalReached ? 'text-green-600' : 'text-primary'}`}>
+                {Math.round(progressPercentage)}%
+              </span>
+            </div>
+          </div>
+
+          <Progress value={progressPercentage} className="h-4" />
+          
+          <div className="mt-4 flex justify-between items-center text-xs font-bold text-muted-foreground uppercase">
+            <span>{totalItemsDonated} articles déjà offerts</span>
+            {isGoalReached && <span className="text-green-600">Objectif atteint !</span>}
+          </div>
+        </Card>
+      )}
+
+      {/* LISTE DES ARTICLES */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between border-b pb-4">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Gift className="text-primary" /> Articles ({actions.length})
+          </h2>
+          <Button variant="ghost" size="sm" onClick={handleShare}>
+            {copied ? <Check className="w-4 h-4 mr-2 text-green-500" /> : <Share2 className="w-4 h-4 mr-2" />} 
+            {copied ? "Copié !" : "Partager"}
+          </Button>
+        </div>
+
+        <div className="grid gap-4">
+          {actions.map(action => (
+            <ActionListItem 
+              key={action.id} 
+              action={action} 
+              isOwner={isOwner}
+              listRequireAuth={list?.require_auth}
+              onActionSuccess={fetchPublicListData}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

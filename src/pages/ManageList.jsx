@@ -1,1 +1,306 @@
-import { useEffect, useState } from 'react';import { base44 } from '@/api/base44Client';import { createPageUrl } from '@/utils';import { Link } from 'react-router-dom';import ActionCard from '../components/ActionCard';import ActionForm from '../components/ActionForm';import { Button } from '@/components/ui/button';import { Plus, Star, StarOff, Pencil, Trash2, Share2, ArrowLeft, Eye } from 'lucide-react';import { Badge } from '@/components/ui/badge';import { toast } from 'sonner';export default function ManageList() {  const urlParams = new URLSearchParams(window.location.search);  const listId = urlParams.get('id');  const [list, setList] = useState(null);  const [actions, setActions] = useState([]);  const [loading, setLoading] = useState(true);  const [formOpen, setFormOpen] = useState(false);  const [editingAction, setEditingAction] = useState(null);  const loadData = async () => {    const [l, a] = await Promise.all([      base44.entities.DonationList.filter({ id: listId }),      base44.entities.DonationAction.filter({ list_id: listId }),    ]);    setList(l[0] || null);    setActions(a);    setLoading(false);  };  useEffect(() => { if (listId) loadData(); }, [listId]);  const handleSaveAction = async (data) => {    if (editingAction) {      await base44.entities.DonationAction.update(editingAction.id, data);    } else {      await base44.entities.DonationAction.create(data);    }    setFormOpen(false);    setEditingAction(null);    loadData();  };  const handleToggleFeatured = async (action) => {    await base44.entities.DonationAction.update(action.id, { is_featured: !action.is_featured });    loadData();  };  const handleDeleteAction = async (action) => {    if (!confirm(`Supprimer "${action.title}" ?`)) return;    await base44.entities.DonationAction.delete(action.id);    loadData();  };  const handleShare = () => {    const url = window.location.origin + '/' + (createPageUrl(`ListDetail?id=${listId}`)).replace(/^\//, '');    navigator.clipboard.writeText(url);    toast.success('Lien copié dans le presse-papiers !');  };  const openAdd = () => { setEditingAction(null); setFormOpen(true); };  const openEdit = (a) => { setEditingAction(a); setFormOpen(true); };  if (loading) return (    <div className="max-w-5xl mx-auto px-4 py-16 space-y-4">      {Array(4).fill(0).map((_, i) => <div key={i} className="h-20 bg-muted rounded-2xl animate-pulse" />)}    </div>  );  if (!list) return (    <div className="text-center py-24">      <p className="text-muted-foreground">Liste introuvable.</p>    </div>  );  return (    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">      {/* Header */}      <div className="flex items-start gap-4 mb-8">        <Button asChild variant="ghost" size="sm" className="rounded-xl shrink-0 mt-0.5">          <Link to={createPageUrl('MyLists')}><ArrowLeft className="w-4 h-4 mr-1" /> Retour</Link>        </Button>        <div className="flex-1 min-w-0">          <h1 className="font-display text-2xl md:text-3xl font-semibold text-foreground truncate">{list.title}</h1>          <p className="text-muted-foreground mt-1 text-sm">{actions.length} action{actions.length !== 1 ? 's' : ''} · {actions.filter(a => a.is_featured).length} en vedette</p>        </div>        <div className="flex gap-2 shrink-0">          <Button variant="outline" size="sm" className="rounded-xl" onClick={handleShare}>            <Share2 className="w-4 h-4 mr-1.5" /> Partager          </Button>          <Button asChild variant="outline" size="sm" className="rounded-xl">            <Link to={createPageUrl(`ListDetail?id=${listId}`)}><Eye className="w-4 h-4 mr-1.5" /> Voir</Link>          </Button>        </div>      </div>      {/* Info banner */}      <div className="bg-primary/5 border border-primary/20 rounded-2xl px-5 py-4 mb-8">        <p className="text-sm text-primary font-medium">💡 Astuce : Activez ⭐ sur les actions pour les afficher sur la page d'accueil publique.</p>      </div>      {/* Add action */}      <div className="flex items-center justify-between mb-5">        <h2 className="font-semibold text-foreground text-lg">Actions de don</h2>        <Button onClick={openAdd} size="sm" className="rounded-xl bg-primary hover:bg-primary/90">          <Plus className="w-4 h-4 mr-1.5" /> Ajouter        </Button>      </div>      {actions.length === 0 ? (        <div className="text-center py-20 border border-dashed border-border rounded-2xl">          <Plus className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />          <p className="text-muted-foreground mb-4">Aucune action pour l'instant.</p>          <Button onClick={openAdd} size="sm" className="rounded-xl bg-primary hover:bg-primary/90">            Ajouter une action          </Button>        </div>      ) : (        <div className="space-y-4">          {actions.map(action => (            <div key={action.id} className="bg-card border border-border rounded-2xl p-4 flex gap-4 items-start hover:shadow-md transition-shadow">              <div className="flex-1 min-w-0">                <div className="flex items-center gap-2 flex-wrap mb-1">                  <h3 className="font-medium text-foreground">{action.title}</h3>                  {action.is_featured && (                    <Badge className="bg-amber-100 text-amber-700 border border-amber-200 rounded-full text-xs px-2">⭐ Vedette</Badge>                  )}                </div>                <p className="text-sm text-muted-foreground mb-2">{action.unit_price}€ / unité · Objectif : {action.goal_quantity}</p>                {/* Progress */}                <div className="flex items-center gap-2">                  <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden max-w-xs">                    <div                      className="bg-primary h-1.5 rounded-full transition-all"                      style={{ width: `${Math.min(100, Math.round(((action.current_quantity || 0) / action.goal_quantity) * 100))}%` }}                    />                  </div>                  <span className="text-xs text-muted-foreground">{action.current_quantity || 0}/{action.goal_quantity}</span>                </div>              </div>              <div className="flex gap-1 shrink-0">                <button onClick={() => handleToggleFeatured(action)} title={action.is_featured ? 'Retirer de la vedette' : 'Mettre en vedette'}                  className={`p-2 rounded-xl transition-colors ${action.is_featured ? 'text-amber-500 hover:bg-amber-50' : 'text-muted-foreground hover:bg-muted hover:text-amber-500'}`}>                  {action.is_featured ? <Star className="w-4 h-4 fill-amber-400" /> : <Star className="w-4 h-4" />}                </button>                <button onClick={() => openEdit(action)} className="p-2 rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">                  <Pencil className="w-4 h-4" />                </button>                <button onClick={() => handleDeleteAction(action)} className="p-2 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors">                  <Trash2 className="w-4 h-4" />                </button>              </div>            </div>          ))}        </div>      )}      <ActionForm        open={formOpen}        onOpenChange={setFormOpen}        action={editingAction}        onSave={handleSaveAction}        listId={listId}      />    </div>  );}
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { supabase } from '@/api/supabaseClient';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@/components/ui/card'; // Ajouté
+import { Label } from '@/components/ui/label'; // Ajouté
+import { Switch } from '@/components/ui/switch'; // Ajouté
+import { Plus, Heart, Share2, Check, X, Clock, AlertTriangle, Lock, Unlock, ShieldCheck } from 'lucide-react';
+import { createPageUrl, formatPrice } from '@/lib/utils'; 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+import ActionFormDialog from '@/components/list/ActionFormDialog';
+import ActionListItem from '@/components/list/ActionListItem';
+
+export default function ManageList() {
+  const [searchParams] = useSearchParams();
+  const listId = searchParams.get('id');
+  
+  const [list, setList] = useState(null);
+  const [actions, setActions] = useState([]);
+  const [pendingDonations, setPendingDonations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingAction, setEditingAction] = useState(null);
+  
+  const [actionToDelete, setActionToDelete] = useState(null);
+  const [donationToReject, setDonationToReject] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (listId) fetchListData();
+  }, [listId]);
+
+  const fetchListData = async () => {
+    try {
+      const { data: listData } = await supabase.from('DonationList').select('*').eq('id', listId).single();
+      setList(listData);
+
+      const { data: actionsData } = await supabase.from('DonationAction').select('*').eq('list_id', listId).order('created_at', { ascending: false });
+      setActions(actionsData || []);
+
+      const actionIds = (actionsData || []).map(a => a.id);
+      if (actionIds.length > 0) {
+        const { data: proofData } = await supabase
+          .from('DonationProof')
+          .select('*, DonationAction(title)')
+          .in('action_id', actionIds)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+        setPendingDonations(proofData || []);
+      }
+    } catch (error) {
+      console.error("Erreur:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- NOUVELLE FONCTION POUR LE MODE PRIVÉ ---
+  const toggleAuthRequirement = async (checked) => {
+    try {
+      const { error } = await supabase
+        .from('DonationList')
+        .update({ require_auth: checked })
+        .eq('id', listId);
+
+      if (error) throw error;
+      setList(prev => ({ ...prev, require_auth: checked }));
+    } catch (error) {
+      console.error("Erreur mise à jour accès:", error.message);
+    }
+  };
+
+  const handleApproveDonation = async (donation) => {
+    const { error } = await supabase.from('DonationProof').update({ status: 'approved' }).eq('id', donation.id);
+    if (error) alert("Erreur: " + error.message);
+    else fetchListData();
+  };
+
+  const handleConfirmRejectDonation = async () => {
+    if (!donationToReject) return;
+    const { error } = await supabase.from('DonationProof').update({ status: 'rejected' }).eq('id', donationToReject.id);
+    if (error) alert("Erreur: " + error.message);
+    else {
+      setDonationToReject(null);
+      fetchListData();
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!actionToDelete) return;
+    await supabase.from('DonationAction').delete().eq('id', actionToDelete.id);
+    setActionToDelete(null);
+    fetchListData();
+  };
+
+  const handleToggleFeatured = async (action) => {
+    await supabase.from('DonationAction').update({ is_featured: !action.is_featured }).eq('id', action.id);
+    fetchListData();
+  };
+
+  const handleUpdateQuantity = async (action, newQuantity) => {
+    await supabase.from('DonationAction').update({ current_quantity: newQuantity }).eq('id', action.id);
+    fetchListData();
+  };
+
+  const handleShare = async () => {
+    const publicUrl = createPageUrl('ListDetail', { id: listId });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: list?.title || 'Baraka',
+          text: `Découvrez ma liste de dons : ${list?.title}`,
+          url: publicUrl,
+        });
+      } catch (err) {
+        console.log("Erreur partage:", err);
+      }
+    } else {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  if (loading) return <div className="p-10 space-y-4"><Skeleton className="h-12 w-3/4" /><Skeleton className="h-40 w-full" /></div>;
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 pb-20">
+      <header className="flex justify-between items-start mb-8 text-foreground gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{list?.title}</h1>
+          <p className="text-muted-foreground mt-2">{list?.description || "Ma liste Baraka"}</p>
+        </div>
+        <Button 
+          variant={copied ? "default" : "outline"} 
+          onClick={handleShare}
+          className="rounded-xl transition-all shadow-sm"
+        >
+          {copied ? <Check className="w-4 h-4 mr-2"/> : <Share2 className="w-4 h-4 mr-2"/>}
+          {copied ? "Copié !" : "Partager"}
+        </Button>
+      </header>
+
+      {/* --- NOUVEAU : RÉGLAGES D'ACCÈS --- */}
+      <Card className="mb-12 p-6 border-2 border-primary/10 shadow-sm bg-gradient-to-r from-primary/5 to-transparent rounded-[2rem]">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex gap-4 items-start">
+            <div className={`p-3 rounded-2xl ${list?.require_auth ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'}`}>
+              {list?.require_auth ? <Lock size={24} /> : <Unlock size={24} />}
+            </div>
+            <div>
+              <Label htmlFor="auth-mode" className="text-lg font-bold flex items-center gap-2">
+                Mode de contribution
+                {list?.require_auth && <ShieldCheck className="w-4 h-4 text-amber-500" />}
+              </Label>
+              <p className="text-sm text-muted-foreground max-w-md">
+                {list?.require_auth 
+                  ? "Seuls les utilisateurs connectés peuvent participer. Idéal pour limiter le spam." 
+                  : "Tout le monde peut participer, même sans compte. Idéal pour plus de dons."}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-center gap-2">
+            <Switch 
+              id="auth-mode" 
+              checked={list?.require_auth || false} 
+              onCheckedChange={toggleAuthRequirement}
+            />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {list?.require_auth ? "Connexion requise" : "Accès Libre"}
+            </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* SECTION : DONS À VALIDER */}
+      {pendingDonations.length > 0 && (
+        <section className="mb-12 p-6 bg-amber-50/50 border border-amber-200 rounded-[2rem] animate-in fade-in slide-in-from-top-4 duration-500">
+          <h2 className="text-lg font-bold text-amber-800 flex items-center gap-2 mb-4">
+            <Clock className="w-5 h-5" />
+            Dons en attente de confirmation ({pendingDonations.length})
+          </h2>
+          <div className="space-y-3">
+            {pendingDonations.map((don) => (
+              <div key={don.id} className="bg-white border border-amber-100 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                <div>
+                  <p className="font-bold text-amber-900 text-lg">{formatPrice(don.amount)}</p>
+                  <p className="text-xs text-amber-700/70">Cible : {don.DonationAction?.title}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="ghost" className="text-amber-700 hover:bg-amber-100 rounded-xl" onClick={() => setDonationToReject(don)}>
+                    <X className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl px-4" onClick={() => handleApproveDonation(don)}>
+                    <Check className="w-4 h-4 mr-1" /> Confirmer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* SECTION ÉLÉMENTS */}
+      <section className="space-y-6">
+        <div className="flex justify-between items-center border-b pb-4">
+          <h2 className="text-xl font-semibold flex items-center gap-2 text-foreground">
+            <Heart className="w-5 h-5 text-primary" />
+            Mes Actions ({actions.length})
+          </h2>
+          <Button onClick={() => { setEditingAction(null); setIsAdding(true); }} className="rounded-xl shadow-sm">
+            <Plus className="w-4 h-4 mr-2"/> Ajouter une action
+          </Button>
+        </div>
+
+        <ActionFormDialog 
+          open={isAdding || !!editingAction}
+          onOpenChange={(open) => { setIsAdding(open); if(!open) setEditingAction(null); }}
+          listId={listId}
+          editingAction={editingAction}
+          onAdded={fetchListData}
+        />
+
+        <div className="grid gap-4">
+          {actions.map(action => (
+            <ActionListItem 
+              key={action.id} 
+              action={action} 
+              isOwner={true}
+              onDelete={() => setActionToDelete(action)}
+              onEdit={(act) => setEditingAction(act)}
+              onToggleFeatured={handleToggleFeatured}
+              onUpdateQuantity={handleUpdateQuantity}
+            />
+          ))}
+          {actions.length === 0 && (
+            <div className="text-center py-16 border-2 border-dashed rounded-[2rem] bg-muted/10 text-muted-foreground">
+              <p>Votre liste est vide pour le moment.</p>
+              <Button variant="link" onClick={() => setIsAdding(true)} className="text-primary p-0 h-auto">
+                Ajouter votre première action de don
+              </Button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ALERT DIALOGS (Confirmations) */}
+      <AlertDialog open={!!actionToDelete} onOpenChange={() => setActionToDelete(null)}>
+        <AlertDialogContent className="rounded-[2rem]">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Supprimer cette action ?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer "{actionToDelete?.title}" ? 
+              Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl">Annuler</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmDelete}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!donationToReject} onOpenChange={() => setDonationToReject(null)}>
+        <AlertDialogContent className="rounded-[2rem]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Refuser ce don ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Le don de {formatPrice(donationToReject?.amount)} pour "{donationToReject?.DonationAction?.title}" ne sera pas comptabilisé.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl">Retour</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmRejectDonation}
+              className="rounded-xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Confirmer le refus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

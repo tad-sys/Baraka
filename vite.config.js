@@ -4,8 +4,8 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  // C'est ici que le changement opère :
-  base: '/', 
+  // On remet le nom du dossier pour GitHub Pages
+  base: '/Baraka/', 
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

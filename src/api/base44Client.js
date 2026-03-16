@@ -1,1 +1,12 @@
-import { createClient } from '@base44/sdk';import { appParams } from '@/lib/app-params';const { appId, token, functionsVersion, appBaseUrl } = appParams;//Create a client with authentication requiredexport const base44 = createClient({  appId,  token,  functionsVersion,  serverUrl: '',  requiresAuth: false,  appBaseUrl});
+const base44Mock = {
+  entities: {
+    DonationList: { filter: () => Promise.resolve([]) },
+    DonationAction: { filter: () => Promise.resolve([]) }
+  },
+  auth: { 
+    me: () => Promise.resolve(null) 
+  },
+  storage: {}
+};
+
+export const base44 = base44Mock;
