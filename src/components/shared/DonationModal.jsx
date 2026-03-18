@@ -1,143 +1,166 @@
 import { useState } from 'react';
 import { supabase } from '@/api/supabaseClient';
+import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, CheckCircle, ExternalLink, ArrowRight } from 'lucide-react';
+import { Loader2, CheckCircle, ExternalLink, ArrowRight, Heart, Sparkles } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
+import { toast } from 'sonner';
 
 export default function DonationModal({ action, onClose, onRefresh }) {
+  const { user } = useAuth(); // Récupération de l'utilisateur pour lier le don
   const [step, setStep] = useState(1);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // --- ÉTAPE 1 : Validation du montant ---
   const handleNextStep = (e) => {
     e.preventDefault();
-    if (parseFloat(amount) > 0) {
+    const val = parseFloat(amount);
+    if (val > 0) {
       setStep(2);
+    } else {
+      toast.error("Veuillez saisir un montant supérieur à 0€");
     }
   };
 
+  // --- ÉTAPE 2 : Confirmation après paiement externe ---
   const handleConfirmDonation = async () => {
     setLoading(true);
     try {
-      // 1. Enregistrement de la preuve de don (Table DonationProof utilise 'amount')
+      // On insère uniquement la preuve de don. 
+      // Le Trigger SQL 'tr_after_donation_insert' mettra à jour 'DonationAction' automatiquement.
       const { error: proofError } = await supabase
         .from('DonationProof')
         .insert([{
           action_id: action.id,
           amount: parseFloat(amount),
+          user_id: user?.id || null, // Lie le don si l'utilisateur est connecté
           status: 'completed'
         }]);
 
       if (proofError) throw proofError;
 
-      // 2. Calcul des nouvelles valeurs pour l'Action
-      // CORRECTION : On utilise unit_price car c'est là que se trouve le prix en base
-      const pricePerUnit = Number(action.unit_price) || 1;
-      const donatedUnits = parseFloat(amount) / pricePerUnit;
-      const currentQty = Number(action.current_quantity) || 0;
-      const newQuantity = currentQty + donatedUnits;
-
-      // 3. Mise à jour de DonationAction (Quantité + Statut)
-      const { error: actionError } = await supabase
-        .from('DonationAction')
-        .update({ 
-          current_quantity: newQuantity,
-          status: newQuantity >= (Number(action.goal_quantity) || 0) ? 'completed' : 'pending'
-        })
-        .eq('id', action.id);
-
-      if (actionError) throw actionError;
-
-      // 4. On déclenche le rafraîchissement global
+      // Déclenche le rafraîchissement de la liste parente
       if (onRefresh) onRefresh();
       
       setStep(3);
     } catch (error) {
-      console.error("Erreur:", error);
-      alert("Erreur lors de l'enregistrement : " + error.message);
+      console.error("Erreur enregistrement don:", error);
+      toast.error("Impossible de valider le don : " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="p-6 max-w-sm mx-auto">
+    <div className="bg-card">
+      {/* ÉTAPE 1 : SAISIE DU MONTANT */}
       {step === 1 && (
-        <div className="space-y-6">
-          <div className="text-center">
-            <h2 className="text-xl font-bold">Quel montant souhaitez-vous offrir ?</h2>
-            <p className="text-sm text-muted-foreground mt-1">Soutien pour : {action.title}</p>
+        <div className="p-8 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+              <Heart className="w-7 h-7 text-primary fill-primary/20" />
+            </div>
+            <h2 className="text-2xl font-black tracking-tight">Soutenir l'action</h2>
+            <p className="text-sm text-muted-foreground font-medium italic truncate">
+              "{action.title}"
+            </p>
           </div>
           
-          <form onSubmit={handleNextStep} className="space-y-4">
-            <div className="relative">
-              <Input 
-                type="number" 
-                placeholder="0.00" 
-                className="pl-8 text-lg font-bold rounded-xl h-12"
-                value={amount} 
-                onChange={(e) => setAmount(e.target.value)} 
-                required 
-                min="1"
-                step="0.01"
-              />
-              <span className="absolute left-3 top-3 text-lg font-bold text-muted-foreground">€</span>
+          <form onSubmit={handleNextStep} className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase font-black text-muted-foreground tracking-widest ml-1">
+                Combien souhaitez-vous offrir ?
+              </label>
+              <div className="relative group">
+                <Input 
+                  type="number" 
+                  placeholder="10.00" 
+                  className="pl-12 text-2xl font-black rounded-2xl h-16 border-2 focus-visible:ring-primary/20 transition-all shadow-sm"
+                  value={amount} 
+                  onChange={(e) => setAmount(e.target.value)} 
+                  required 
+                  min="1"
+                  step="0.01"
+                  autoFocus
+                />
+                <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-bold text-muted-foreground group-focus-within:text-primary transition-colors">€</span>
+              </div>
             </div>
-            <Button type="submit" className="w-full rounded-xl h-12 text-md">
-              Continuer <ArrowRight className="w-4 h-4 ml-2" />
+            <Button type="submit" className="w-full rounded-2xl h-14 text-lg font-bold shadow-lg shadow-primary/10 hover:translate-y-[-2px] active:translate-y-0 transition-all">
+              Continuer <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </form>
         </div>
       )}
 
+      {/* ÉTAPE 2 : PAIEMENT EXTERNE */}
       {step === 2 && (
-        <div className="space-y-6 text-center">
-          <div>
-            <h2 className="text-xl font-bold">Effectuer mon don de {formatPrice(amount)}</h2>
-            <p className="text-sm text-muted-foreground mt-1">Cliquez sur le lien ci-dessous pour payer</p>
+        <div className="p-8 space-y-6 text-center animate-in fade-in slide-in-from-right-4">
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black tracking-tight">Paiement sécurisé</h2>
+            <p className="text-sm text-muted-foreground">
+              Pour finaliser votre don de <span className="text-foreground font-black">{formatPrice(amount)}</span>, cliquez sur le bouton ci-dessous :
+            </p>
           </div>
 
-          <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl">
-            <Button asChild variant="default" className="w-full rounded-xl h-12 shadow-lg">
+          <div className="p-6 bg-muted/30 rounded-[2rem] border-2 border-dashed border-border space-y-4">
+            <Button asChild className="w-full rounded-xl h-14 text-md font-bold bg-white text-primary border-2 border-primary hover:bg-primary hover:text-white transition-all">
               <a href={action.payment_link} target="_blank" rel="noopener noreferrer">
-                Ouvrir le lien de paiement <ExternalLink className="w-4 h-4 ml-2" />
+                Ouvrir le lien de l'association <ExternalLink className="w-5 h-5 ml-2" />
               </a>
             </Button>
+            <p className="text-[10px] text-muted-foreground leading-tight italic">
+              Le paiement s'effectue sur une page externe sécurisée.
+            </p>
           </div>
 
-          <div className="pt-4 border-t border-border/50">
-            <p className="text-xs text-muted-foreground mb-4 italic">
-              Une fois votre paiement terminé sur la plateforme, cliquez sur le bouton ci-dessous :
-            </p>
+          <div className="space-y-3 pt-4">
             <Button 
               onClick={handleConfirmDonation} 
               disabled={loading}
-              className="w-full rounded-xl h-12 bg-green-600 hover:bg-green-700 text-white"
+              className="w-full rounded-2xl h-14 bg-green-600 hover:bg-green-700 text-white font-black text-lg shadow-lg shadow-green-100 transition-all"
             >
-              {loading ? <Loader2 className="animate-spin mr-2" /> : null}
+              {loading ? <Loader2 className="animate-spin mr-2" /> : <CheckCircle className="w-5 h-5 mr-2" />}
               J'ai effectué mon don
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setStep(1)} className="mt-2 text-muted-foreground">
-              Modifier le montant
+            
+            <Button variant="ghost" size="sm" onClick={() => setStep(1)} className="text-muted-foreground font-bold">
+              ← Modifier le montant
             </Button>
           </div>
         </div>
       )}
 
+      {/* ÉTAPE 3 : SUCCÈS */}
       {step === 3 && (
-        <div className="text-center py-4">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-10 h-10 text-green-600" />
+        <div className="p-10 text-center space-y-6 animate-in zoom-in duration-300">
+          <div className="relative inline-block">
+            <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle className="w-14 h-14 text-green-600" />
+            </div>
+            <Sparkles className="absolute -top-2 -right-2 text-amber-400 w-8 h-8 animate-pulse" />
           </div>
-          <h3 className="font-bold text-xl">Merci pour votre don !</h3>
-          <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
-            Votre participation de <span className="font-bold text-foreground">{formatPrice(amount)}</span> a été ajoutée. 
-            <br />
-            <span className="text-green-600 font-medium italic">La barre de progression s'est mise à jour !</span>
-          </p>
-          <Button onClick={onClose} className="mt-8 w-full rounded-xl">
-            Fermer
+
+          <div className="space-y-2">
+            <h3 className="font-black text-3xl tracking-tight">C'est fait !</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed px-2">
+              Merci pour votre générosité. Votre don de <span className="font-bold text-foreground">{formatPrice(amount)}</span> fait avancer cette cause.
+            </p>
+          </div>
+
+          <div className="py-2">
+            <div className="h-1.5 w-full bg-green-100 rounded-full overflow-hidden">
+              <div className="h-full bg-green-500 w-full animate-progress-fast" />
+            </div>
+            <p className="text-[10px] text-green-600 font-bold uppercase mt-2 tracking-widest">
+              Action mise à jour en temps réel
+            </p>
+          </div>
+
+          <Button onClick={onClose} className="w-full rounded-2xl h-14 font-black text-lg bg-foreground text-background hover:opacity-90 transition-opacity">
+            Super, merci !
           </Button>
         </div>
       )}

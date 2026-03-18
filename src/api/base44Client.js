@@ -1,12 +1,4 @@
-const base44Mock = {
-  entities: {
-    DonationList: { filter: () => Promise.resolve([]) },
-    DonationAction: { filter: () => Promise.resolve([]) }
-  },
-  auth: { 
-    me: () => Promise.resolve(null) 
-  },
-  storage: {}
-};
+import { supabase } from './supabaseClient';
 
-export const base44 = base44Mock;
+// On redirige tout vers le vrai supabase pour arrêter le blocage
+export const base44 = supabase;

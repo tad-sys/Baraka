@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   Pencil, Trash2, Star, StarOff, Heart, Plus, Minus, 
-  Lock, Target, TrendingUp, CheckCircle2, PartyPopper, Flag 
+  Lock, Target, TrendingUp, CheckCircle2, PartyPopper, Flag, ExternalLink 
 } from 'lucide-react';
 import CategoryIcon, { getCategoryLabel } from '../shared/CategoryIcon';
 import { motion } from 'framer-motion';
@@ -31,41 +31,37 @@ export default function ActionListItem({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isReporting, setIsReporting] = useState(false);
 
-  // CALCULS BASÉS SUR LE MONTANT RÉEL
+  // --- CALCULS DE PROGRESSION ---
   const totalWanted = parseFloat(action.goal_amount || 0);
   const totalCurrent = parseFloat(action.amount || 0);
-
-  const progress = totalWanted > 0
-    ? (totalCurrent / totalWanted) * 100
-    : 0;
-
+  const progress = totalWanted > 0 ? (totalCurrent / totalWanted) * 100 : 0;
   const isCompleted = progress >= 100;
 
-  // FONCTION DE SIGNALEMENT
+  // --- LOGIQUE DE SIGNALEMENT ---
   const handleReport = async () => {
-    if (isOwner) return;
-
-    const confirmReport = window.confirm("Souhaitez-vous signaler cet article pour contenu inapproprié ?");
+    if (isOwner || isReporting) return;
+    const confirmReport = window.confirm("Souhaitez-vous signaler cette action pour contenu inapproprié ?");
     if (!confirmReport) return;
 
     setIsReporting(true);
     try {
-      // Appel RPC ou mise à jour directe du compteur
-      const { data: currentData } = await supabase
+      const { data: currentAction, error: fetchError } = await supabase
         .from('DonationAction')
         .select('flag_count')
         .eq('id', action.id)
         .single();
+
+      if (fetchError) throw fetchError;
         
-      await supabase
+      const { error: updateError } = await supabase
         .from('DonationAction')
-        .update({ flag_count: (currentData?.flag_count || 0) + 1 })
+        .update({ flag_count: (currentAction?.flag_count || 0) + 1 })
         .eq('id', action.id);
 
-      toast.success("Signalement envoyé à la modération.");
+      if (updateError) throw updateError;
+      toast.success("Signalement envoyé. Merci de votre vigilance.");
     } catch (err) {
-      console.error(err);
-      toast.error("Échec de l'envoi du signalement.");
+      toast.error("Impossible d'envoyer le signalement.");
     } finally {
       setIsReporting(false);
     }
@@ -82,45 +78,43 @@ export default function ActionListItem({
 
   const handleQuantityUpdate = async (newQty) => {
     if (onUpdateQuantity) {
-      const newAmount = newQty * (action.unit_price || 0);
-      await onUpdateQuantity(action, newQty, newAmount);
-      if (onActionSuccess) onActionSuccess();
+      const safeQty = Math.max(0, newQty);
+      const newAmount = safeQty * (parseFloat(action.unit_price) || 0);
+      try {
+        await onUpdateQuantity(action, safeQty, newAmount);
+        if (onActionSuccess) onActionSuccess();
+      } catch (err) {
+        toast.error("Erreur lors de la mise à jour.");
+      }
     }
   };
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <Card className={`p-4 sm:p-5 border transition-all duration-300 rounded-[2rem] relative ${
+      <Card className={`group p-4 sm:p-5 border transition-all duration-300 rounded-[2rem] relative overflow-hidden ${
         isCompleted 
           ? 'border-green-200 bg-green-50/40 shadow-sm' 
           : 'hover:shadow-md border-border bg-card'
       }`}>
         
-        {/* Bouton Signalement Discret pour les visiteurs */}
         {!isOwner && (
           <button 
             onClick={handleReport}
             disabled={isReporting}
-            className="absolute top-4 left-4 z-10 p-2 rounded-full bg-muted/50 hover:bg-red-50 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 sm:group-hover:opacity-100"
-            style={{ opacity: isReporting ? 1 : undefined }} // Reste visible si en cours
+            className={`absolute top-4 left-4 z-10 p-2 rounded-full bg-white/80 border shadow-sm hover:text-red-600 transition-all sm:opacity-0 sm:group-hover:opacity-100 ${isReporting ? 'opacity-100 text-red-600' : ''}`}
           >
-            <Flag className={`w-3 h-3 ${isReporting ? 'animate-pulse' : ''}`} />
+            <Flag className={`w-3.5 h-3.5 ${isReporting ? 'animate-pulse' : ''}`} />
           </button>
         )}
 
-        <div className="flex gap-4 group">
-          {/* Icon / Image Animée */}
-          <div className={`hidden sm:flex w-16 h-16 rounded-2xl items-center justify-center flex-shrink-0 transition-all duration-500 ${
-            isCompleted ? 'bg-green-500 text-white scale-110 shadow-lg shadow-green-200' : 'bg-primary/5 text-primary/60'
+        <div className="flex gap-4">
+          <div className={`hidden sm:flex w-20 h-20 rounded-[1.5rem] items-center justify-center flex-shrink-0 transition-all duration-500 overflow-hidden ${
+            isCompleted ? 'bg-green-500 text-white shadow-lg shadow-green-100' : 'bg-primary/5 text-primary/60'
           }`}>
             {action.image_url ? (
-              <img src={action.image_url} alt="" className="w-full h-full object-cover rounded-2xl" />
+              <img src={action.image_url} alt={action.title} className="w-full h-full object-cover" />
             ) : (
-              isCompleted ? (
-                <CheckCircle2 className="w-8 h-8 animate-in zoom-in duration-500" />
-              ) : (
-                <CategoryIcon category={action.category} size="lg" />
-              )
+              isCompleted ? <CheckCircle2 className="w-8 h-8" /> : <CategoryIcon category={action.category} size="lg" />
             )}
           </div>
 
@@ -128,140 +122,128 @@ export default function ActionListItem({
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className={`font-bold text-lg leading-tight ${isCompleted ? 'text-green-700' : 'text-foreground'}`}>
+                  <h3 className={`font-bold text-lg tracking-tight ${isCompleted ? 'text-green-800' : 'text-foreground'}`}>
                     {action.title}
                   </h3>
                   {isCompleted && (
-                    <Badge className="bg-green-500 hover:bg-green-500 text-white border-none text-[10px] uppercase font-black animate-pulse shadow-sm">
+                    <Badge className="bg-green-600 text-white border-none text-[10px] font-black animate-in fade-in zoom-in">
                       <PartyPopper className="w-3 h-3 mr-1" /> Terminé !
                     </Badge>
                   )}
                 </div>
+                
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="secondary" className="text-[10px] uppercase tracking-wider font-bold bg-muted/50">
-                    <CategoryIcon category={action.category} size="sm" className="mr-1" />
+                  <Badge variant="outline" className="text-[10px] uppercase font-bold px-2 py-0 bg-background/50">
+                    <CategoryIcon category={action.category} size="xs" className="mr-1" />
                     {getCategoryLabel(action.category)}
                   </Badge>
                   {action.association_name && (
-                    <span className="text-xs text-muted-foreground font-medium italic opacity-80">par {action.association_name}</span>
-                  )}
-                  {action.is_featured && !isCompleted && (
-                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] uppercase font-bold">
-                      <Star className="w-3 h-3 mr-1 fill-current" />Vedette
-                    </Badge>
+                    <span className="text-xs text-muted-foreground font-medium italic">via {action.association_name}</span>
                   )}
                 </div>
               </div>
 
               {isOwner && (
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-amber-50 hover:text-amber-600" onClick={() => onToggleFeatured(action)}>
-                    {action.is_featured ? <StarOff className="w-4 h-4" /> : <Star className="w-4 h-4" />}
+                <div className="flex items-center gap-0.5 bg-muted/30 p-1 rounded-full">
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:text-amber-600" onClick={() => onToggleFeatured(action)}>
+                    {action.is_featured ? <StarOff className="w-4 h-4 fill-amber-500 text-amber-500" /> : <Star className="w-4 h-4" />}
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => onEdit(action)}>
-                    <Pencil className="w-4 h-4" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:text-primary" onClick={() => onEdit(action)}>
+                    <Pencil className="w-3.5 h-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => onDelete(action)}>
-                    <Trash2 className="w-4 h-4" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:text-destructive" onClick={() => onDelete(action)}>
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
               )}
             </div>
 
             {action.description && (
-              <p className="text-sm text-muted-foreground mt-2 line-clamp-2 leading-relaxed">
+              <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
                 {action.description}
               </p>
             )}
 
-            {/* BANDEAU FINANCIER */}
-            <div className={`grid grid-cols-2 gap-3 mt-4 mb-2 p-3 rounded-2xl border transition-all ${
-              isCompleted ? 'bg-white/80 border-green-200 shadow-inner' : 'bg-muted/30 border-border/50'
-            }`}>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1 opacity-70">
-                  <TrendingUp className={`w-3 h-3 ${isCompleted ? 'text-green-500' : 'text-primary'}`} /> Récolté
-                </span>
-                <span className={`text-base font-black ${isCompleted ? 'text-green-600' : 'text-primary'}`}>
-                  {formatPrice(totalCurrent)}
-                </span>
+            {/* --- NOUVEAU : VÉRIFICATEUR DE LIEN POUR LE PROPRIÉTAIRE --- */}
+            {isOwner && action.payment_link && (
+              <div className="mt-3 p-3 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-left-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] font-black text-primary/60 uppercase tracking-widest mb-0.5">Lien de l'association</p>
+                  <p className="text-[11px] truncate font-mono text-muted-foreground">{action.payment_link}</p>
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="secondary" 
+                  className="h-8 rounded-xl text-[10px] font-bold"
+                  onClick={() => window.open(action.payment_link, '_blank')}
+                >
+                  Vérifier <ExternalLink className="w-3 h-3 ml-1.5" />
+                </Button>
               </div>
-              <div className="flex flex-col border-l pl-4 border-border/50">
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1 opacity-70">
-                  <Target className="w-3 h-3 text-foreground" /> Objectif
-                </span>
-                <span className="text-base font-black text-foreground">{formatPrice(totalWanted)}</span>
-              </div>
-            </div>
+            )}
 
-            {/* Barre de Progression */}
-            <div className="mt-4">
-              <div className="flex items-center justify-between text-sm mb-1.5">
-                <span className="text-xs font-medium">
-                  {isCompleted ? (
-                    <span className="text-green-600 font-bold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Objectif atteint !
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      <span className="font-bold text-foreground">{action.current_quantity || 0}</span>
-                      <span className="mx-1">/</span>
-                      {action.goal_quantity} {getCategoryLabel(action.category).toLowerCase()}s
-                    </span>
-                  )}
-                </span>
-                <span className={`font-black px-2.5 py-0.5 rounded-full text-[11px] ${
-                  isCompleted ? 'bg-green-500 text-white' : 'bg-primary/10 text-primary'
-                }`}>
+            {/* Widgets de Stats */}
+            <div className={`flex items-center gap-4 mt-4 p-3 rounded-2xl border ${
+              isCompleted ? 'bg-white/60 border-green-100' : 'bg-muted/30 border-transparent'
+            }`}>
+              <div className="flex-1">
+                <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-0.5">Progression</p>
+                <div className="flex items-end gap-2">
+                  <span className={`text-lg font-black leading-none ${isCompleted ? 'text-green-600' : 'text-foreground'}`}>
+                    {formatPrice(totalCurrent)}
+                  </span>
+                  <span className="text-xs text-muted-foreground mb-0.5 font-medium">sur {formatPrice(totalWanted)}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                 <span className={`text-xs font-black px-2 py-1 rounded-lg ${isCompleted ? 'bg-green-100 text-green-700' : 'bg-primary/10 text-primary'}`}>
                   {Math.round(progress)}%
                 </span>
               </div>
-              <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden shadow-inner p-0.5">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(progress, 100)}%` }}
-                  transition={{ duration: 1.2, ease: "circOut" }}
-                  className={`h-full rounded-full shadow-sm ${
-                    isCompleted ? 'bg-green-500' : 'bg-primary'
-                  }`}
-                />
-              </div>
             </div>
 
-            {/* Actions Contextuelles */}
-            <div className="flex items-center gap-2 mt-5 flex-wrap">
+            <div className="mt-3 w-full bg-muted rounded-full h-2 overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(progress, 100)}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-primary'}`}
+              />
+            </div>
+
+            <div className="flex items-center justify-between mt-5">
+              <div className="text-[11px] font-medium text-muted-foreground italic">
+                {isCompleted ? "Action financée !" : `${action.current_quantity || 0} / ${action.goal_quantity} collectés`}
+              </div>
+
               {isOwner ? (
-                <div className="flex items-center gap-1 border bg-white rounded-full p-1 shadow-sm">
+                <div className="flex items-center gap-2 border bg-white rounded-full p-1 shadow-sm">
                   <Button
-                    variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-muted"
-                    onClick={() => handleQuantityUpdate(Math.max(0, (action.current_quantity || 0) - 1))}
+                    variant="ghost" size="icon" className="h-7 w-7 rounded-full"
+                    onClick={() => handleQuantityUpdate((action.current_quantity || 0) - 1)}
                   >
-                    <Minus className="w-3.5 h-3.5" />
+                    <Minus className="w-3 h-3" />
                   </Button>
-                  <span className="text-sm font-black min-w-[3.5ch] text-center">{action.current_quantity || 0}</span>
+                  <span className="text-xs font-black w-6 text-center">{action.current_quantity || 0}</span>
                   <Button
-                    variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-muted"
+                    variant="ghost" size="icon" className="h-7 w-7 rounded-full"
                     onClick={() => handleQuantityUpdate((action.current_quantity || 0) + 1)}
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3 h-3" />
                   </Button>
                 </div>
               ) : (
                 <Button 
                   size="sm" 
                   onClick={handleDonationClick}
-                  className={`rounded-2xl text-xs font-bold shadow-lg px-6 h-10 transition-all active:scale-95 ${
+                  className={`rounded-full px-5 h-9 font-bold transition-all active:scale-95 ${
                     isCompleted 
-                      ? 'bg-green-600 hover:bg-green-700 text-white shadow-green-100' 
-                      : 'bg-primary hover:bg-primary/90 shadow-primary/20'
+                      ? 'bg-green-600 hover:bg-green-700 text-white' 
+                      : 'bg-primary hover:bg-primary/90 shadow-md shadow-primary/20'
                   }`}
                 >
-                  {(listRequireAuth === true && !user) ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <Heart className={`w-4 h-4 mr-2 ${isCompleted ? 'fill-white' : 'fill-current'}`} />
-                  )}
-                  {isCompleted ? "Faire un don supplémentaire" : "Soutenir cette action"}
+                  { (listRequireAuth === true && !user) ? <Lock className="w-3.5 h-3.5 mr-2" /> : <Heart className="w-3.5 h-3.5 mr-2 fill-current" /> }
+                  {isCompleted ? "Donner plus" : "Participer"}
                 </Button>
               )}
             </div>

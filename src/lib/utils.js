@@ -14,12 +14,12 @@ export function cn(...inputs) {
 export const isIframe = typeof window !== 'undefined' && window.self !== window.top;
 
 /**
- * Génère une URL compatible avec le HashRouter de GitHub Pages.
+ * Génère une URL compatible avec le HashRouter.
+ * CORRECTION : Retourne un chemin relatif pour que <Link> fonctionne.
  */
 export function createPageUrl(pageName, params) {
-    const origin = window.location.origin;
-    const pathname = window.location.pathname;
-    const base = `${origin}${pathname}${pathname.endsWith('/') ? '' : '/'}`;
+    // On nettoie le nom de la page (espaces -> tirets)
+    const formattedPage = pageName.replace(/ /g, '-');
     
     let queryString = "";
     if (params) {
@@ -27,7 +27,9 @@ export function createPageUrl(pageName, params) {
         queryString = `?${searchParams.toString()}`;
     }
 
-    return `${base}#/${pageName.replace(/ /g, '-')}${queryString}`;
+    // IMPORTANT : Pour React Router (Link), on retourne juste le chemin.
+    // Le HashRouter s'occupera d'ajouter le '#' automatiquement.
+    return `/${formattedPage}${queryString}`;
 }
 
 /**

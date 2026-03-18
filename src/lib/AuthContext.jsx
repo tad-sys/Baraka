@@ -7,48 +7,49 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
 
-  // Fonction pour récupérer les infos supplémentaires (is_admin) depuis la table profiles
   const fetchUserProfile = async (sessionUser) => {
     if (!sessionUser) return null;
-    
     try {
+      // On met un timeout pour ne pas bloquer le site si la base rame
       const { data, error } = await supabase
         .from('profiles')
         .select('is_admin')
         .eq('id', sessionUser.id)
         .single();
 
-      if (error) {
-        console.warn("Profil non trouvé ou erreur:", error.message);
-        return sessionUser; // On retourne au moins le user de base
-      }
-
-      // On fusionne les infos d'auth et les infos de la table profiles
+      if (error) return sessionUser;
       return { ...sessionUser, is_admin: data?.is_admin || false };
     } catch (err) {
-      console.error("Erreur fetchUserProfile:", err);
       return sessionUser;
     }
   };
 
   useEffect(() => {
-    // 1. Vérification de la session initiale
     const initializeAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const fullUser = await fetchUserProfile(session.user);
-        setUser(fullUser);
-      } else {
-        setUser(null);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          // IMPORTANT: On définit l'utilisateur de base TOUT DE SUITE pour débloquer le site
+          setUser(session.user);
+          setIsLoadingAuth(false); // On libère l'affichage ICI
+
+          // Puis on cherche le profil admin en arrière-plan
+          const fullUser = await fetchUserProfile(session.user);
+          setUser(fullUser);
+        } else {
+          setUser(null);
+          setIsLoadingAuth(false);
+        }
+      } catch (e) {
+        setIsLoadingAuth(false);
       }
-      setIsLoadingAuth(false);
     };
 
     initializeAuth();
 
-    // 2. Écoute des changements d'état (login, logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session?.user) {
+        setUser(session.user);
         const fullUser = await fetchUserProfile(session.user);
         setUser(fullUser);
       } else {
@@ -64,9 +65,7 @@ export const AuthProvider = ({ children }) => {
     supabase.auth.signUp({ 
       email, 
       password,
-      options: {
-        emailRedirectTo: options.redirectTo 
-      }
+      options: { emailRedirectTo: options.redirectTo }
     });
 
   const signIn = (email, password) => 
@@ -83,9 +82,7 @@ export const AuthProvider = ({ children }) => {
     const defaultRedirect = `${origin}${path}#/ResetPassword`;
     const redirectTo = options.redirectTo || defaultRedirect;
     
-    return await supabase.auth.resetPasswordForEmail(email, { 
-      redirectTo 
-    });
+    return await supabase.auth.resetPasswordForEmail(email, { redirectTo });
   };
 
   return (

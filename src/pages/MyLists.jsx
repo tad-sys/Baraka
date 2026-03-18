@@ -1,16 +1,26 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/api/supabaseClient'; 
 import { Link } from 'react-router-dom';
-// CORRECTION : Importation depuis le bon chemin (src/lib/utils)
 import { createPageUrl } from '@/lib/utils';
 import ListCard from '../components/ListCard';
 import { Button } from '@/components/ui/button';
-import { Plus, List as ListIcon, Settings2, Globe, Lock, Eye } from 'lucide-react';
+import { toast } from "sonner"; // Assure-toi d'avoir sonner pour les notifications
+import { 
+  Plus, 
+  List as ListIcon, 
+  Settings2, 
+  Globe, 
+  Lock, 
+  Eye, 
+  Trash2, 
+  Loader2 
+} from 'lucide-react';
 
 export default function MyLists() {
   const [lists, setLists] = useState([]);
   const [actionsCounts, setActionsCounts] = useState({});
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     fetchMyLists();
@@ -57,6 +67,31 @@ export default function MyLists() {
     }
   };
 
+  // --- NOUVELLE FONCTION DE SUPPRESSION ---
+  const handleDeleteList = async (listId, listTitle) => {
+    const confirmDelete = window.confirm(`Êtes-vous sûr de vouloir supprimer la liste "${listTitle}" ? Cette action est irréversible et supprimera toutes les actions associées.`);
+    
+    if (!confirmDelete) return;
+
+    setDeletingId(listId);
+    try {
+      const { error } = await supabase
+        .from('DonationList')
+        .delete()
+        .eq('id', listId);
+
+      if (error) throw error;
+
+      toast.success("Liste supprimée avec succès");
+      // Mise à jour locale de l'état pour éviter un rechargement complet
+      setLists(prev => prev.filter(l => l.id !== listId));
+    } catch (error) {
+      toast.error("Erreur lors de la suppression : " + error.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 min-h-[80vh]">
       {/* HEADER */}
@@ -83,7 +118,23 @@ export default function MyLists() {
           {lists.map(list => (
             <div key={list.id} className="group flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="relative">
-                {/* Badge de visibilité */}
+                {/* BOUTON SUPPRIMER (Top Left) */}
+                <div className="absolute top-4 left-4 z-20">
+                  <button
+                    onClick={() => handleDeleteList(list.id, list.title)}
+                    disabled={deletingId === list.id}
+                    className="flex items-center justify-center w-9 h-9 rounded-full bg-white/90 border border-red-100 text-red-500 shadow-sm hover:bg-red-500 hover:text-white transition-all backdrop-blur-sm group-hover:scale-110 active:scale-95 disabled:opacity-50"
+                    title="Supprimer la liste"
+                  >
+                    {deletingId === list.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Badge de visibilité (Top Right) */}
                 <div className="absolute top-4 right-4 z-10">
                   <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-md border text-[10px] font-bold uppercase tracking-wider ${
                     list.is_public 
